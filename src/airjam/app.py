@@ -184,7 +184,7 @@ def _hud(frame: np.ndarray, session: Session) -> None:
         glow = 40 + int(150 * ((session.tick % 30) / 30))
         cv2.putText(frame, f"ON FIRE x{session.streak}", (frame.shape[1] - 320, 34),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (glow, glow, 255), 2, cv2.LINE_AA)
-    cv2.putText(frame, "thumb+index=kick  +middle=snare  +ring=hihat  +pinky=crash  |  q=quit",
+    cv2.putText(frame, "thumb+index=kick  +middle=snare  +ring=hihat  +pinky=crash  |  q or ESC=quit",
                 (14, frame.shape[0] - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                 (150, 150, 150), 1, cv2.LINE_AA)
 
@@ -192,7 +192,8 @@ def _hud(frame: np.ndarray, session: Session) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="airjam", description="Play drums with your fingers - webcam only.")
     parser.add_argument("--camera", type=int, default=0)
-    parser.add_argument("--width", type=int, default=960)
+    parser.add_argument("--width", type=int, default=0,
+                        help="capture width; 0 (default) = native resolution, fullscreen window")
     parser.add_argument("--height", type=int, default=540)
     args = parser.parse_args(argv)
 
@@ -220,20 +221,33 @@ def main(argv: list[str] | None = None) -> int:
     if not cam.isOpened():
         print("could not open camera %d" % args.camera)
         return 2
-    cam.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
-    cam.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
+    if args.width > 0:  # 0 = keep the camera's native shape
+        cam.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
+        cam.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
 
     print("AirJam - pinch thumb to a finger to hit that drum. q to quit.")
+    fullscreen = args.width == 0
+    win = "AirJam - air drum kit"
+    if fullscreen:
+        cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+        cv2.setWindowProperty(win, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        cv2.waitKey(1)  # let the property land before frames flow
     try:
+        resized = False
         while True:
             ok, frame = cam.read()
             if not ok:
                 break
             frame = cv2.flip(frame, 1)
+            if fullscreen and not resized:
+                # match the pad layout to whatever the camera actually delivers
+                session.width, session.height = frame.shape[1], frame.shape[0]
+                resized = True
             hand = tracker.process(frame)
             out = run_over_frame(frame, session, hand)
-            cv2.imshow("AirJam - air drum kit", out)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            cv2.imshow(win, out)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q") or key == 27:  # q or ESC
                 break
     except KeyboardInterrupt:
         pass
