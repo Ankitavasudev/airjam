@@ -129,9 +129,17 @@ def test_pipeline_triggers_and_draws():
     out = run_over_frame(frame.copy(), s, hs)
     assert s.hits == 1
     assert len(s.rings) == 1
-    assert len(s.sparks) == 14
+    assert len(s.sparks) == 16
     # ring + sparks actually put pixels on screen
     assert out.sum() > frame.sum()
+    assert s.floaters and "kick" in s.floaters[0][2]
+
+
+def test_run_over_frame_resizes_input():
+    s = make_session()
+    frame = np.zeros((360, 640, 3), dtype=np.uint8)
+    out = run_over_frame(frame, s, None)
+    assert out.shape == (s.height, s.width, 3)
 
 
 def test_no_hand_does_not_crash():
@@ -173,3 +181,82 @@ def test_names_match_drum_count():
 def test_player_silent_when_no_device():
     p = Player()
     p.play(KICK)  # must not raise even without audio device
+
+
+# --- wav / playback bytes ---------------------------------------------------
+
+def test_wav_bytes_is_real_wav():
+    from airjam.synth import wav_bytes
+    data = wav_bytes(KICK)
+    assert data[:4] == b"RIFF"
+    assert data[8:12] == b"WAVE"
+    assert len(data) > 1000
+
+
+def test_wav_cache_is_stable_per_pitch():
+    from airjam.synth import wav_play_bytes
+    assert wav_play_bytes(HIHAT, 1.0) is wav_play_bytes(HIHAT, 1.0)
+
+
+def test_repitch_shifts_length_position():
+    from airjam.synth import repitch, sample, CRASH
+    s = sample(CRASH)
+    up = repitch(s, 1.25)
+    assert up.shape == s.shape
+    assert abs(up[len(up) // 4]) != abs(s[len(s) // 4])  # actually shifted
+
+
+def test_combo_text_after_streak():
+    s = make_session()
+    for i in range(4):
+        pinch_test(s, [0.9, 0.3, 0.9, 0.9])   # snare fires
+        pinch_test(s, [0.9, 0.8, 0.9, 0.9])   # release
+        for _ in range(COOLDOWN):
+            pinch_test(s, [0.9, 0.8, 0.9, 0.9])
+    assert s.streak == 4
+    assert "x4" in s.floaters[-1][2]
+
+
+def test_screen_shake_clears():
+    s = make_session()
+    frame = np.zeros((540, 960, 3), dtype=np.uint8)
+    pinch_test(s, [0.3, 0.9, 0.9, 0.9])
+    assert s.shake > 0
+    for _ in range(20):
+        run_over_frame(frame.copy(), s, None)  # frames pass, shake settles
+    assert s.shake == 0
+
+
+# --- v3: stage + beat --------------------------------------------------------
+
+def test_beat_toggles():
+    s = make_session()
+    assert s.beat is False
+    s.toggle_beat()
+    assert s.beat is True
+    s.toggle_beat()
+    assert s.beat is False
+
+
+def test_beat_plays_pattern_rings():
+    from airjam.app import BEAT_TICKS
+    s = make_session()
+    s.toggle_beat()
+    frame = np.zeros((540, 960, 3), dtype=np.uint8)
+    for _ in range(BEAT_TICKS * 2 + 2):
+        run_over_frame(frame.copy(), s, None)
+    assert s.beat_hits >= 2          # the groove actually played
+    assert s.hits == 0               # beat doesn't steal your score
+
+
+def test_stage_is_session_sized():
+    s = make_session()
+    assert s.stage.shape == (540, 960, 3)
+
+
+def test_camera_card_draws():
+    s = make_session()
+    frame = np.full((540, 960, 3), 60, dtype=np.uint8)
+    out = run_over_frame(frame, s, None)
+    corner = out[-40:, -40:]
+    assert corner.sum() > 0  # card content ended up bottom-right

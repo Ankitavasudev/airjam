@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "airjam"
-version = "0.1.0"
+version = "0.3.0"
 description = "Play a drum kit in the air - webcam hand tracking, real drum sounds, zero dependencies beyond the obvious."
 readme = "README.md"
 requires-python = ">=3.9"
